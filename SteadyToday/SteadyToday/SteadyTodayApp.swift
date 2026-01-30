@@ -17,6 +17,7 @@ struct SteadyTodayApp: App {
             RoutineAction.self,
             ActionCheck.self,
             TimeSession.self,
+            GratitudeEntry.self,
         ])
         
         // Use an explicit local store URL so we can recover cleanly during development

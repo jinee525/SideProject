@@ -263,6 +263,26 @@ final class ActionCheck {
 }
 
 @Model
+final class GratitudeEntry {
+    /// 날짜 (startOfDay 기준, 수정 가능)
+    var day: Date
+    /// 감사 내용
+    var text: String?
+    /// 이미지 파일명 (Documents 디렉토리 기준)
+    var imageURL: String?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(day: Date, text: String? = nil, imageURL: String? = nil, createdAt: Date = .now, updatedAt: Date = .now) {
+        self.day = day
+        self.text = text
+        self.imageURL = imageURL
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+@Model
 final class TimeSession {
     var createdAt: Date
     var startAt: Date?

@@ -30,21 +30,53 @@ struct TodayView: View {
     @Query(sort: \RoutineAction.todayOrder) private var allActions: [RoutineAction]
     @Query(sort: \ActionCheck.createdAt, order: .reverse) private var allChecks: [ActionCheck]
     @Query(sort: \TimeSession.createdAt, order: .reverse) private var timeSessions: [TimeSession]
+    @Query(sort: \GratitudeEntry.day, order: .reverse) private var gratitudeEntries: [GratitudeEntry]
+    
+    @State private var showingGratitudeEditor = false
 
     var body: some View {
         NavigationStack {
-            List {
-                normalSections
+            ZStack(alignment: .bottomTrailing) {
+                List {
+                    normalSections
+                    // 여유 공간 추가
+                    Section {
+                        Spacer()
+                            .frame(height: 80)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(6)
+                .scrollContentBackground(.hidden)
+                .navigationTitle(titleText)
+                .toolbar {
+                    EmptyView()
+                }
+                .onAppear {
+                    bootstrapIfNeeded()
+                }
+                
+                // 감사일기 버튼 (우측 하단)
+                Button {
+                    showingGratitudeEditor = true
+                } label: {
+                    Image(systemName: "heart.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(
+                            Circle()
+                                .fill(Color.pink)
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
             }
-            .listStyle(.insetGrouped)
-            .listSectionSpacing(6)
-            .scrollContentBackground(.hidden)
-            .navigationTitle(titleText)
-            .toolbar {
-                EmptyView()
-            }
-            .onAppear {
-                bootstrapIfNeeded()
+            .sheet(isPresented: $showingGratitudeEditor) {
+                GratitudeEditModal(day: today)
             }
         }
     }
@@ -62,24 +94,20 @@ struct TodayView: View {
     }
     
     private var weeklySection: some View {
-        Section {
-            SectionCardView(title: "이번 주 목표") {
-                ForEach(weeklyActions) { action in
-                    ActionRow(
-                        colorKey: action.category?.colorKey,
-                        title: action.name,
-                        subtitle: subtitle(for: action),
-                        isChecked: isCheckedToday(action),
-                        isEnabled: true
-                    ) {
-                        toggleCheck(action)
-                    }
+        Section("이번 주 목표") {
+            ForEach(weeklyActions) { action in
+                ActionRow(
+                    colorKey: action.category?.colorKey,
+                    title: action.name,
+                    subtitle: subtitle(for: action),
+                    isChecked: isCheckedToday(action),
+                    isEnabled: true,
+                    action: action
+                ) {
+                    toggleCheck(action)
                 }
             }
         }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
     }
     
     private var timeActionSection: some View {
@@ -101,24 +129,20 @@ struct TodayView: View {
     }
     
     private var dailySection: some View {
-        Section {
-            SectionCardView(title: "오늘의 액션") {
-                ForEach(dailyTodayActions) { action in
-                    ActionRow(
-                        colorKey: action.category?.colorKey,
-                        title: action.name,
-                        subtitle: subtitle(for: action),
-                        isChecked: isCheckedToday(action),
-                        isEnabled: true
-                    ) {
-                        toggleCheck(action)
-                    }
+        Section("오늘의 액션") {
+            ForEach(dailyTodayActions) { action in
+                ActionRow(
+                    colorKey: action.category?.colorKey,
+                    title: action.name,
+                    subtitle: subtitle(for: action),
+                    isChecked: isCheckedToday(action),
+                    isEnabled: true,
+                    action: action
+                ) {
+                    toggleCheck(action)
                 }
             }
         }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
     }
 
     private var timeActionCardItems: [TimeActionCardItem] {
@@ -512,6 +536,7 @@ private struct ActionRow: View {
     let subtitle: String
     let isChecked: Bool
     let isEnabled: Bool
+    let action: RoutineAction
     let onToggle: () -> Void
 
     var body: some View {
@@ -540,9 +565,16 @@ private struct ActionRow: View {
             .disabled(!isEnabled)
             .opacity(isEnabled ? 1 : 0.35)
         }
+        .frame(minHeight: 52) // 최소 높이 고정
         .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggle() }
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
     }
 }
 
