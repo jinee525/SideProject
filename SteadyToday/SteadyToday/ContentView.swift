@@ -31,5 +31,6 @@ struct ContentView: View {
             RoutineAction.self,
             ActionCheck.self,
             TimeSession.self,
+            GratitudeEntry.self,
         ], inMemory: true)
 }

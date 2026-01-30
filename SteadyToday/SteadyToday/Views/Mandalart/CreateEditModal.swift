@@ -63,25 +63,14 @@ struct CreateEditModal: View {
     }
     
     var body: some View {
-        NavigationStack {
-            Form {
-                contentSection
+        CommonModal(
+            title: navigationTitle,
+            isValid: isValid,
+            onSave: {
+                save()
             }
-            .navigationTitle(navigationTitle)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("저장") {
-                        save()
-                        dismiss()
-                    }
-                    .foregroundStyle(AppColors.label)
-                    .disabled(!isValid)
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("취소") { dismiss() }
-                        .foregroundStyle(AppColors.label)
-                }
-            }
+        ) {
+            contentSection
         }
     }
     

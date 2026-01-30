@@ -12,6 +12,7 @@ struct HistoryDetailView: View {
     @Query(sort: \TimeSession.createdAt, order: .reverse) private var timeSessions: [TimeSession]
     @Query(sort: \RoutineAction.todayOrder) private var actions: [RoutineAction]
     @Query(sort: \MandalartCategory.sortOrder) private var categories: [MandalartCategory]
+    @Query(sort: \GratitudeEntry.day, order: .reverse) private var gratitudeEntries: [GratitudeEntry]
 
     init(selectedDay: Binding<Date>, monthAnchor: Binding<Date>) {
         _selectedDay = selectedDay
@@ -72,6 +73,9 @@ struct HistoryDetailView: View {
                 // }
             }
             .padding(.horizontal, 16)
+
+            gratitudeSection()
+                .padding(.horizontal, 16)
 
             actionCheckTable()
                 .padding(.horizontal, 16)
@@ -402,6 +406,41 @@ struct HistoryDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    @ViewBuilder
+    private func gratitudeSection() -> some View {
+        let dayStart = selectedDay.startOfDay(calendar: calendar)
+        let entry = gratitudeEntries.first { $0.day == dayStart }
+        
+        if let entry = entry, (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil {
+            SectionCardView(title: "감사일기") {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let text = entry.text, !text.isEmpty {
+                        Text(text)
+                            .font(.body)
+                            .foregroundStyle(AppColors.label)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    
+                    if let imageFileName = entry.imageURL,
+                       let url = imageURL(from: imageFileName),
+                       let imageData = try? Data(contentsOf: url),
+                       let image = UIImage(data: imageData) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+            }
+        }
+    }
+    
+    private func imageURL(from fileName: String) -> URL? {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent(fileName)
+    }
+    
     @ViewBuilder
     private func actionCheckTable() -> some View {
         let weekInterval = selectedDay.weekInterval(calendar: calendar)
