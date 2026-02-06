@@ -17,6 +17,15 @@ enum AppColors {
     /// 아주 연한 구분선 (그리드, 디바이더)
     static let gridLine: Color = Color.primary.opacity(0.1)
 
+    // MARK: - 페이지/카드 배경 (iOS 설정 스타일 모노톤)
+
+    /// 페이지 전체 배경 (연한 회색)
+    static let pageBackground: Color = Color(.systemGroupedBackground)
+    /// 카드·타이틀바 등 섹션 배경 (흰색에 가까운 카드)
+    static let cardBackground: Color = Color(.secondarySystemGroupedBackground)
+    /// 카드 모서리 반경
+    static let cardCornerRadius: CGFloat = 12
+
     // MARK: - 보조 텍스트
 
     /// 보조 텍스트 (섹션 타이틀, 푸터, 캡션, 부가 설명)
