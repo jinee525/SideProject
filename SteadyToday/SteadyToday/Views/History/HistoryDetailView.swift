@@ -29,6 +29,7 @@ struct HistoryDetailView: View {
         VStack(alignment: .leading, spacing: 20) {
             Text(detailTitle(selectedDay))
                 .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 16)
 
             summaryView(categoryProgresses: categoryProgresses)
@@ -54,37 +55,34 @@ struct HistoryDetailView: View {
     @ViewBuilder
     private func summaryView(categoryProgresses: [CategoryProgress]) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(spacing: 12) {
-                let dailyProgress = calculateDailyProgress(for: selectedDay)
-                let dailyCompletedActions = getDailyCompletedActions(for: selectedDay)
-                let weeklyCompletedActions = getWeeklyCompletedActions(for: selectedDay)
-                let challengeCompletedActions = getChallengeCompletedActions(for: selectedDay)
+            let dailyProgress = calculateDailyProgress(for: selectedDay)
+            let dailyActions = getDailyActionStatuses(for: selectedDay)
+            let weeklyCompletedActions = getWeeklyCompletedActions(for: selectedDay)
+            let challengeCompletedActions = getChallengeCompletedActions(for: selectedDay)
 
-                if dailyProgress != nil {
-                    actionListCard(title: "오늘의 액션", actions: dailyCompletedActions, progress: dailyProgress)
-                }
-
-                // if !weeklyCompletedActions.isEmpty {
-                //     actionListCard(title: "이번 주 목표", actions: weeklyCompletedActions)
-                // }
-
-                // if !challengeCompletedActions.isEmpty {
-                //     actionListCard(title: "오늘의 도전", actions: challengeCompletedActions)
-                // }
+            if dailyProgress != nil {
+                actionListCard(title: "오늘의 액션", actions: dailyActions, progress: dailyProgress)
             }
-            .padding(.horizontal, 16)
+
+            // if !weeklyCompletedActions.isEmpty {
+            //     actionListCard(title: "이번 주 목표", actions: weeklyCompletedActions)
+            // }
+
+            // if !challengeCompletedActions.isEmpty {
+            //     actionListCard(title: "오늘의 도전", actions: challengeCompletedActions)
+            // }
 
             gratitudeSection()
-                .padding(.horizontal, 16)
 
             actionCheckTable()
-                .padding(.horizontal, 16)
 
             if !categoryProgresses.isEmpty {
                 categoryGrid(categoryProgresses: categoryProgresses)
-                    .padding(.horizontal, 16)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var detailSwipeGesture: some Gesture {
@@ -112,12 +110,6 @@ struct HistoryDetailView: View {
 
     // MARK: - Data & Progress
 
-    private struct TypeProgress {
-        let completed: Int
-        let target: Int
-        let percentage: Int
-    }
-
     private struct CategoryProgress: Identifiable {
         let category: MandalartCategory
         let completed: Int
@@ -126,97 +118,95 @@ struct HistoryDetailView: View {
         var id: PersistentIdentifier { category.persistentModelID }
     }
 
-    private struct CompletedAction: Identifiable {
+    private struct ActionStatus: Identifiable {
         let name: String
         let colorKey: String?
+        let isCompleted: Bool
         var id: String { name }
     }
 
-    private func calculateDailyProgress(for day: Date) -> TypeProgress? {
+    private func calculateDailyProgress(for day: Date) -> DailyProgress? {
+        DailyCompletionCalculator.progress(
+            for: day,
+            actions: actions,
+            checks: checks,
+            timeSessions: timeSessions,
+            calendar: calendar
+        )
+    }
+
+    private func getDailyActionStatuses(for day: Date) -> [ActionStatus] {
         let dayStart = day.startOfDay(calendar: calendar)
+        var result: [ActionStatus] = []
+
         let dailyTargets = actions.filter { action in
-            action.isActive(on: dayStart, calendar: calendar) && action.type == .weekdayRepeat && action.isScheduled(on: dayStart, calendar: calendar)
+            action.isActive(on: dayStart, calendar: calendar)
+                && action.type == .weekdayRepeat
+                && action.isScheduled(on: dayStart, calendar: calendar)
         }
-        let dailyCompleted = checks.filter { check in
-            guard check.day == dayStart else { return false }
-            guard let action = check.action else { return false }
-            return action.type == .weekdayRepeat && action.isActive(on: dayStart, calendar: calendar)
-        }.count
-        var timeBasedCompletedToday = 0
-        for action in actions where action.isActive(on: dayStart, calendar: calendar) && action.type == .timeBased && action.isScheduled(on: dayStart, calendar: calendar) {
+        result.append(contentsOf: dailyTargets.map { action in
+            let isCompleted = checks.contains { check in
+                check.day == dayStart && check.action?.persistentModelID == action.persistentModelID
+            }
+            return ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted)
+        })
+
+        let timeTargets = actions.filter { action in
+            action.isActive(on: dayStart, calendar: calendar)
+                && action.type == .timeBased
+                && action.isScheduled(on: dayStart, calendar: calendar)
+        }
+        result.append(contentsOf: timeTargets.map { action in
             let total = timeSessions
                 .filter { $0.action?.persistentModelID == action.persistentModelID }
                 .filter { $0.attributedDay == dayStart }
                 .reduce(0) { $0 + $1.durationMinutes }
-            if total >= action.timeTargetMinutes { timeBasedCompletedToday += 1 }
-        }
-        let weeklyNCompletedToday = actions.filter { action in
+            let isCompleted = total >= action.timeTargetMinutes
+            return ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted)
+        })
+
+        let weeklyCompleted = actions.filter { action in
             guard action.type == .weeklyN, action.isActive(on: dayStart, calendar: calendar) else { return false }
             return checks.contains { $0.action?.persistentModelID == action.persistentModelID && $0.day == dayStart }
-        }.count
-        let totalTarget = dailyTargets.count + timeBasedCompletedToday + weeklyNCompletedToday
-        if totalTarget == 0 { return nil }
-        let totalCompleted = dailyCompleted + timeBasedCompletedToday + weeklyNCompletedToday
-        let percentage = Int((Double(totalCompleted) / Double(totalTarget) * 100.0).rounded())
-        return TypeProgress(completed: totalCompleted, target: totalTarget, percentage: percentage)
-    }
-
-    private func getDailyCompletedActions(for day: Date) -> [CompletedAction] {
-        let dayStart = day.startOfDay(calendar: calendar)
-        var result: [CompletedAction] = []
-        let dailyChecks = checks.filter { check in
-            guard check.day == dayStart, let action = check.action else { return false }
-            return action.type == .weekdayRepeat && action.isActive(on: dayStart, calendar: calendar)
         }
-        result.append(contentsOf: dailyChecks.compactMap { check in
-            guard let action = check.action else { return nil }
-            return CompletedAction(name: action.name, colorKey: action.category?.colorKey)
+        result.append(contentsOf: weeklyCompleted.map { action in
+            ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true)
         })
-        for action in actions where action.isActive(on: dayStart, calendar: calendar) && action.type == .timeBased && action.isScheduled(on: dayStart, calendar: calendar) {
-            let total = timeSessions
-                .filter { $0.action?.persistentModelID == action.persistentModelID }
-                .filter { $0.attributedDay == dayStart }
-                .reduce(0) { $0 + $1.durationMinutes }
-            if total >= action.timeTargetMinutes {
-                result.append(CompletedAction(name: action.name, colorKey: action.category?.colorKey))
-            }
+
+        return result.sorted {
+            if $0.isCompleted != $1.isCompleted { return $0.isCompleted && !$1.isCompleted }
+            return $0.name < $1.name
         }
-        for action in actions where action.type == .weeklyN && action.isActive(on: dayStart, calendar: calendar) {
-            if checks.contains(where: { $0.action?.persistentModelID == action.persistentModelID && $0.day == dayStart }) {
-                result.append(CompletedAction(name: action.name, colorKey: action.category?.colorKey))
-            }
-        }
-        return result
     }
 
-    private func getChallengeCompletedActions(for day: Date) -> [CompletedAction] {
+    private func getChallengeCompletedActions(for day: Date) -> [ActionStatus] {
         let dayStart = day.startOfDay(calendar: calendar)
         let timeTargets = actions.filter { $0.isActive(on: dayStart, calendar: calendar) && $0.type == .timeBased && $0.isScheduled(on: dayStart, calendar: calendar) }
-        var completedActions: [CompletedAction] = []
+        var completedActions: [ActionStatus] = []
         for action in timeTargets {
             let total = timeSessions
                 .filter { $0.action?.persistentModelID == action.persistentModelID }
                 .filter { $0.attributedDay == dayStart }
                 .reduce(0) { $0 + $1.durationMinutes }
             if total >= action.timeTargetMinutes {
-                completedActions.append(CompletedAction(name: action.name, colorKey: action.category?.colorKey))
+                completedActions.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true))
             }
         }
         return completedActions
     }
 
-    private func getWeeklyCompletedActions(for day: Date) -> [CompletedAction] {
+    private func getWeeklyCompletedActions(for day: Date) -> [ActionStatus] {
         let dayStart = day.startOfDay(calendar: calendar)
         let thisWeek = day.weekInterval(calendar: calendar)
         let weeklyTargets = actions.filter { $0.isActive(on: dayStart, calendar: calendar) && $0.type == .weeklyN }
-        var completedActions: [CompletedAction] = []
+        var completedActions: [ActionStatus] = []
         for action in weeklyTargets {
             let actionChecks = checks.filter {
                 guard $0.action?.persistentModelID == action.persistentModelID else { return false }
                 return $0.day >= thisWeek.start && $0.day < thisWeek.end
             }
             if !actionChecks.isEmpty {
-                completedActions.append(CompletedAction(name: action.name, colorKey: action.category?.colorKey))
+                completedActions.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true))
             }
         }
         return completedActions
@@ -287,7 +277,7 @@ struct HistoryDetailView: View {
 
     // MARK: - UI Components
 
-    private func actionListCard(title: String, actions: [CompletedAction], progress: TypeProgress? = nil) -> some View {
+    private func actionListCard(title: String, actions: [ActionStatus], progress: DailyProgress? = nil) -> some View {
         SectionCardView(title: title) {
             VStack(alignment: .leading, spacing: 12) {
                 if let progress = progress {
@@ -322,10 +312,10 @@ struct HistoryDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(actions) { action in
                             HStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
+                                Image(systemName: action.isCompleted ? "checkmark.circle.fill" : "circle")
                                     .symbolRenderingMode(.hierarchical)
                                     .font(.title3)
-                                    .foregroundStyle(CategoryColors.color(for: action.colorKey))
+                                    .foregroundStyle(action.isCompleted ? CategoryColors.color(for: action.colorKey) : .secondary)
                                 Text(action.name)
                                     .font(.subheadline)
                                     .foregroundStyle(AppColors.label)
@@ -370,9 +360,9 @@ struct HistoryDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("카테고리별 달성률 계산 방법")
                     .font(.headline)
-                Text("선택한 날짜가 속한 달 기준으로, 달 시작~오늘까지 성공한 횟수 / 그 달에 발생하는 액션 수 비율입니다.")
+                Text("선택한 날짜가 속한 달의 성공한 액션 수 / 그 달에 발생하는 총 액션 수의 비율입니다.")
                     .font(.subheadline)
-                Text("• 요일 반복·누적 시간: 그 달에 반복 요일에 해당하는 일수만큼 발생, 체크(또는 목표 시간 달성)한 날만 성공\n• 주 N회: 그 달에 걸친 주 수 × N이 발생, 주마다 최대 N회까지 성공으로 인정")
+                Text("• 요일 반복·누적 시간 액션: 그 달에 반복 요일에 해당하는 일수만큼 발생, 완료한 날만 성공으로 인정\n• 주 N회: 그 달에 걸친 주 수 × N이 발생, 주마다 최대 N회까지 성공으로 인정")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

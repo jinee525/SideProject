@@ -15,37 +15,36 @@ struct MandalartGridView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 30) {
+            VStack(spacing: 20) {
                 if let planYear = planYear {
-                    // 상단: 목표-카테고리 테이블
-                    categoryGrid(planYear: planYear)
-                        .padding()
-                    
-                    Divider()
-                        .padding(.horizontal)
-                    
-                    // 하단: 선택된 카테고리의 액션 테이블
-                    if let selectedCategory = selectedCategory {
-                        VStack(spacing: 12) {
+                    // 상단: 목표-카테고리 (흰색 카드)
+                    BorderedCardView {
+                        categoryGrid(planYear: planYear)
+                    }
+
+                    // 하단: 카테고리-액션 (흰색 카드)
+                    BorderedCardView {
+                        if let selectedCategory = selectedCategory {
                             actionGrid(category: selectedCategory)
-                        }
-                        .padding()
-                    } else {
-                        VStack(spacing: 8) {
+                        } else {
                             Text("카테고리를 선택해주세요")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 20)
                         }
-                        .padding()
                     }
                 } else {
                     Text("계획을 먼저 세워주세요.")
                         .foregroundStyle(.secondary)
-                        .padding()
+                        .padding(.vertical, 20)
                 }
             }
-            .padding(.vertical)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 80)
         }
+        .scrollContentBackground(.hidden)
         .sheet(isPresented: $showingAddCategory) {
             if let planYear = planYear {
                 CreateEditModal(modalType: .category(planYear: planYear, category: nil))

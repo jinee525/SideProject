@@ -23,37 +23,41 @@ struct TodayView: View {
 
     private let calendar = Calendar.steadyMondayCalendar
     private var today: Date { Date().startOfDay(calendar: calendar) }
-    private var thisWeek: DateInterval { Date().weekInterval(calendar: calendar) }
-    private var titleEmoji: String { emojiForToday(today) }
-    private var titleText: String { "\(formattedTodayTitle(today)) \(titleEmoji)" }
+    private var selectedWeek: DateInterval { selectedDay.weekInterval(calendar: calendar) }
+    private var titleEmoji: String { emojiForToday(selectedDay) }
+    private var titleText: String { formattedTodayTitle(selectedDay) }
+    private var isViewingToday: Bool { calendar.isDate(selectedDay, inSameDayAs: today) }
 
     @Query(sort: \RoutineAction.todayOrder) private var allActions: [RoutineAction]
     @Query(sort: \ActionCheck.createdAt, order: .reverse) private var allChecks: [ActionCheck]
     @Query(sort: \TimeSession.createdAt, order: .reverse) private var timeSessions: [TimeSession]
     @Query(sort: \GratitudeEntry.day, order: .reverse) private var gratitudeEntries: [GratitudeEntry]
     
+    @State private var selectedDay: Date = Date().startOfDay(calendar: .steadyMondayCalendar)
     @State private var showingGratitudeEditor = false
 
     var body: some View {
-        NavigationStack {
+        MainTabLayout(
+            title: titleText,
+            showLeftButton: true,
+            showRightButton: !isViewingToday,
+            onLeftTap: {
+                selectedDay = calendar.date(byAdding: .day, value: -1, to: selectedDay) ?? selectedDay
+            },
+            onRightTap: {
+                selectedDay = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
+            }
+        ) {
             ZStack(alignment: .bottomTrailing) {
-                List {
-                    normalSections
-                    // 여유 공간 추가
-                    Section {
-                        Spacer()
-                            .frame(height: 80)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        normalSections
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 80)
                 }
-                .listStyle(.insetGrouped)
-                .listSectionSpacing(6)
                 .scrollContentBackground(.hidden)
-                .navigationTitle(titleText)
-                .toolbar {
-                    EmptyView()
-                }
                 .onAppear {
                     bootstrapIfNeeded()
                 }
@@ -76,14 +80,14 @@ struct TodayView: View {
                 .padding(.bottom, 20)
             }
             .sheet(isPresented: $showingGratitudeEditor) {
-                GratitudeEditModal(day: today)
+                GratitudeEditModal(day: selectedDay)
             }
         }
     }
     
     @ViewBuilder
     private var normalSections: some View {
-        if !timeActions.isEmpty {
+        if !timeActionCardItems.isEmpty {
             timeActionSection
         }
         if !weeklyActions.isEmpty {
@@ -91,58 +95,91 @@ struct TodayView: View {
         }
         
         dailySection
+        gratitudeSection
     }
     
     private var weeklySection: some View {
-        Section("이번 주 목표") {
-            ForEach(weeklyActions) { action in
-                ActionRow(
-                    colorKey: action.category?.colorKey,
-                    title: action.name,
-                    subtitle: subtitle(for: action),
-                    isChecked: isCheckedToday(action),
-                    isEnabled: true,
-                    action: action
-                ) {
-                    toggleCheck(action)
+        SectionCardView(title: "이번 주 목표") {
+            VStack(spacing: 4) {
+                ForEach(weeklyActions) { action in
+                    ActionRow(
+                        colorKey: action.category?.colorKey,
+                        title: action.name,
+                        subtitle: subtitle(for: action),
+                        isChecked: isCheckedOnSelectedDay(action),
+                        isEnabled: true,
+                        action: action
+                    ) {
+                        toggleCheck(action)
+                    }
                 }
             }
         }
     }
     
     private var timeActionSection: some View {
-        Section {
-            SectionCardView(title: "오늘의 도전") {
-                TimeActionCardsSection(
-                    cardItems: timeActionCardItems,
-                    today: today,
-                    isTimeGoalMetToday: { isTimeGoalMetToday($0) },
-                    totalMinutesForAction: { action, day in totalMinutes(for: action, on: day) },
-                    onStartTimer: { startTimer(for: $0) },
-                    onStopTimer: { stopTimer(for: $0) }
-                )
-            }
+        SectionCardView(title: "오늘의 도전") {
+            TimeActionCardsSection(
+                cardItems: timeActionCardItems,
+                today: selectedDay,
+                isTimeGoalMetToday: { isTimeGoalMetToday($0) },
+                totalMinutesForAction: { action, day in totalMinutes(for: action, on: day) },
+                onStartTimer: { startTimer(for: $0) },
+                onStopTimer: { stopTimer(for: $0) }
+            )
         }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
     }
     
     private var dailySection: some View {
-        Section("오늘의 액션") {
-            ForEach(dailyTodayActions) { action in
-                ActionRow(
-                    colorKey: action.category?.colorKey,
-                    title: action.name,
-                    subtitle: subtitle(for: action),
-                    isChecked: isCheckedToday(action),
-                    isEnabled: true,
-                    action: action
-                ) {
-                    toggleCheck(action)
+        SectionCardView(title: "오늘의 액션") {
+            VStack(spacing: 4) {
+                ForEach(dailyTodayActions) { action in
+                    ActionRow(
+                        colorKey: action.category?.colorKey,
+                        title: action.name,
+                        subtitle: subtitle(for: action),
+                        isChecked: isCheckedOnSelectedDay(action),
+                        isEnabled: true,
+                        action: action
+                    ) {
+                        toggleCheck(action)
+                    }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var gratitudeSection: some View {
+        let dayStart = selectedDay.startOfDay(calendar: calendar)
+        let entry = gratitudeEntries.first { $0.day == dayStart }
+        if let entry = entry, (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil {
+            SectionCardView(title: "오늘의 감사일기") {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let text = entry.text, !text.isEmpty {
+                        Text(text)
+                            .font(.body)
+                            .foregroundStyle(AppColors.label)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let imageFileName = entry.imageURL,
+                       let url = gratitudeImageURL(from: imageFileName),
+                       let imageData = try? Data(contentsOf: url),
+                       let image = UIImage(data: imageData) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+            }
+        }
+    }
+
+    private func gratitudeImageURL(from fileName: String) -> URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(fileName)
     }
 
     private var timeActionCardItems: [TimeActionCardItem] {
@@ -153,21 +190,21 @@ struct TodayView: View {
             let runningSession = ongoingTimeSession(for: action)
             
             // 진행 중인 세션이 있으면 진행 중 카드만 표시
-            if runningSession != nil {
+            if isViewingToday, runningSession != nil {
                 items.append(.active(action: action, runningSession: runningSession))
             } else {
-                // 오늘 시작해서 완료된 세션이 있는지 확인 (시작 날짜가 오늘인 완료된 세션)
-                let completedSessionsToday = timeSessions.filter {
+                // 선택한 날짜에 완료된 세션이 있는지 확인
+                let completedSessionsForSelectedDay = timeSessions.filter {
                     $0.action?.persistentModelID == action.persistentModelID &&
                     !$0.isOngoing &&
-                    $0.attributedDay == today
+                    $0.attributedDay == selectedDay
                 }
                 
-                if let firstCompletedSession = completedSessionsToday.first {
-                    // 오늘 시작해서 완료된 세션이 있으면 완료 카드만 표시
+                if let firstCompletedSession = completedSessionsForSelectedDay.first {
+                    // 선택한 날짜에 완료된 세션이 있으면 완료 카드만 표시
                     items.append(.completed(session: firstCompletedSession, action: action))
-                } else {
-                    // 오늘 시작해서 완료된 세션이 없으면 시작 가능 카드 표시
+                } else if isViewingToday {
+                    // 오늘인 경우 시작 가능 카드 표시
                     items.append(.active(action: action, runningSession: nil))
                 }
             }
@@ -177,7 +214,7 @@ struct TodayView: View {
     }
 
     private var activeActions: [RoutineAction] {
-        allActions.filter { $0.isActive(on: today, calendar: calendar) }
+        allActions.filter { $0.isActive(on: selectedDay, calendar: calendar) }
     }
 
     private var weeklyActions: [RoutineAction] {
@@ -187,22 +224,22 @@ struct TodayView: View {
     private var timeActions: [RoutineAction] {
         activeActions.filter { action in
             guard action.type == .timeBased else { return false }
-            // 진행 중인 타이머가 있으면 요일 필터링 무시하고 항상 표시
-            if let session = ongoingTimeSession(for: action), session.isOngoing {
+            // 오늘일 때만 진행 중인 타이머를 항상 표시
+            if isViewingToday, let session = ongoingTimeSession(for: action), session.isOngoing {
                 return true
             }
-            // 그 외에는 오늘 요일에 해당하는 액션만 표시
-            return action.isScheduled(on: today, calendar: calendar)
+            // 그 외에는 선택한 요일에 해당하는 액션만 표시
+            return action.isScheduled(on: selectedDay, calendar: calendar)
         }
     }
 
     private var dailyTodayActions: [RoutineAction] {
-        activeActions.filter { $0.type == .weekdayRepeat && $0.isScheduled(on: today, calendar: calendar) }
+        activeActions.filter { $0.type == .weekdayRepeat && $0.isScheduled(on: selectedDay, calendar: calendar) }
     }
 
-    private func isEnabledToday(_ action: RoutineAction) -> Bool {
+    private func isEnabledForSelectedDay(_ action: RoutineAction) -> Bool {
         if action.type == .weeklyN { return true }
-        return action.isScheduled(on: today, calendar: calendar)
+        return action.isScheduled(on: selectedDay, calendar: calendar)
     }
 
     private func subtitle(for action: RoutineAction) -> String {
@@ -217,25 +254,25 @@ struct TodayView: View {
         }
     }
 
-    private func isCheckedToday(_ action: RoutineAction) -> Bool {
-        allChecks.contains { $0.action?.persistentModelID == action.persistentModelID && $0.day == today }
+    private func isCheckedOnSelectedDay(_ action: RoutineAction) -> Bool {
+        allChecks.contains { $0.action?.persistentModelID == action.persistentModelID && $0.day == selectedDay }
     }
 
     private func weeklyCount(_ action: RoutineAction) -> Int {
         guard action.type == .weeklyN else { return 0 }
         return allChecks.filter {
             guard $0.action?.persistentModelID == action.persistentModelID else { return false }
-            return $0.day >= thisWeek.start && $0.day < thisWeek.end
+            return $0.day >= selectedWeek.start && $0.day < selectedWeek.end
         }.count
     }
 
     private func toggleCheck(_ action: RoutineAction) {
-        guard isEnabledToday(action) else { return }
+        guard isEnabledForSelectedDay(action) else { return }
         withAnimation {
-            if let existing = allChecks.first(where: { $0.action?.persistentModelID == action.persistentModelID && $0.day == today }) {
+            if let existing = allChecks.first(where: { $0.action?.persistentModelID == action.persistentModelID && $0.day == selectedDay }) {
                 modelContext.delete(existing)
             } else {
-                let check = ActionCheck(day: today, createdAt: .now, action: action)
+                let check = ActionCheck(day: selectedDay, createdAt: .now, action: action)
                 modelContext.insert(check)
             }
         }
@@ -254,7 +291,7 @@ struct TodayView: View {
     // MARK: - Time-based actions
 
     private func timeSubtitle(for action: RoutineAction) -> String {
-        let total = totalMinutes(for: action, on: today)
+        let total = totalMinutes(for: action, on: selectedDay)
         let formatted = formatMinutes(total)
         let target = formatMinutes(action.timeTargetMinutes)
         return "\(formatted) / \(target)"
@@ -269,7 +306,7 @@ struct TodayView: View {
     }
 
     private func isTimeGoalMetToday(_ action: RoutineAction) -> Bool {
-        return totalMinutes(for: action, on: today) >= action.timeTargetMinutes
+        return totalMinutes(for: action, on: selectedDay) >= action.timeTargetMinutes
     }
 
     private func ongoingTimeSession(for action: RoutineAction) -> TimeSession? {
@@ -277,6 +314,7 @@ struct TodayView: View {
     }
 
     private func startTimer(for action: RoutineAction) {
+        guard isViewingToday else { return }
         guard ongoingTimeSession(for: action) == nil else { return }
         let attributedDay = Date().startOfDay(calendar: calendar)
         let session = TimeSession(attributedDay: attributedDay, durationMinutes: 0, isManual: false, startAt: Date(), endAt: nil, action: action)
@@ -321,9 +359,29 @@ struct TodayView: View {
 
     private func emojiForToday(_ date: Date) -> String {
         let emojis = ["🙂", "😺", "🌿", "🍀", "🔥", "🌟", "☀️", "🌙", "🏃", "📌", "🧠", "🫶"]
-        let dayNumber = Int(date.startOfDay(calendar: calendar).timeIntervalSince1970 / 86_400)
-        let idx = abs(dayNumber) % emojis.count
-        return emojis[idx]
+        let key = "dailyEmoji.\(dayKey(for: date))"
+        let defaults = UserDefaults.standard
+        if let stored = defaults.string(forKey: key), emojis.contains(stored) {
+            return stored
+        }
+        let randomEmoji = emojis.randomElement() ?? "🙂"
+        defaults.set(randomEmoji, forKey: key)
+        return randomEmoji
+    }
+    
+    private func dayKey(for date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date.startOfDay(calendar: calendar))
+    }
+    
+    private var selectedDayBinding: Binding<Date> {
+        Binding(
+            get: { selectedDay },
+            set: { selectedDay = $0.startOfDay(calendar: calendar) }
+        )
     }
 }
 
