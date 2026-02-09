@@ -78,8 +78,8 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
 
                             Spacer()
 
-                            titleAccessory
-                                .frame(width: 32, height: 32)
+                            // titleAccessory
+                            //     .frame(width: 32, height: 32)
 
                             Group {
                                 if showRightButton {
@@ -92,7 +92,7 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
                                             .frame(width: 32, height: 32)
                                     }
                                 } else {
-                                    Color.clear
+                                    titleAccessory
                                         .frame(width: 32, height: 32)
                                 }
                             }
@@ -100,7 +100,7 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 22)
                     .background(headerBackground.ignoresSafeArea(edges: .top))
                 }
         }

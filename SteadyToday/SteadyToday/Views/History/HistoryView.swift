@@ -15,7 +15,6 @@ struct HistoryView: View {
         MainTabLayout(title: "히스토리") {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Spacer().frame(height: 12)
                     BorderedCardView {
                         VStack(alignment: .leading, spacing: 0) {
                             calendarHeader
@@ -26,6 +25,7 @@ struct HistoryView: View {
 
                     HistoryDetailView(selectedDay: $selectedDay, monthAnchor: $monthAnchor)
                 }
+                .padding(.top, 12)
             }
             .scrollContentBackground(.hidden)
             .onAppear {
@@ -61,7 +61,8 @@ struct HistoryView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 12)
+        .padding(.top, 0)
+        .padding(.bottom, 12)
     }
 
     private var calendarGrid: some View {

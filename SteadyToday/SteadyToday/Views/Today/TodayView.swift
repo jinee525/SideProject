@@ -31,10 +31,10 @@ struct TodayView: View {
     @Query(sort: \RoutineAction.todayOrder) private var allActions: [RoutineAction]
     @Query(sort: \ActionCheck.createdAt, order: .reverse) private var allChecks: [ActionCheck]
     @Query(sort: \TimeSession.createdAt, order: .reverse) private var timeSessions: [TimeSession]
-    @Query(sort: \GratitudeEntry.day, order: .reverse) private var gratitudeEntries: [GratitudeEntry]
+    @Query(sort: \GratitudeEntry.day, order: .reverse) private var dailyLogEntries: [GratitudeEntry]
     
     @State private var selectedDay: Date = Date().startOfDay(calendar: .steadyMondayCalendar)
-    @State private var showingGratitudeEditor = false
+    @State private var showingDailyLogEditor = false
 
     var body: some View {
         MainTabLayout(
@@ -62,25 +62,44 @@ struct TodayView: View {
                     bootstrapIfNeeded()
                 }
                 
-                // 감사일기 버튼 (우측 하단)
-                Button {
-                    showingGratitudeEditor = true
-                } label: {
-                    Image(systemName: "heart.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(
-                            Circle()
-                                .fill(Color.pink)
-                        )
-                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                VStack(alignment: .trailing, spacing: 12) {
+                    if !isViewingToday {
+                        Button {
+                            selectedDay = today
+                        } label: {
+                            Image(systemName: "arrow.right")
+                                .font(.title2)
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                                .background(
+                                    Circle()
+                                        .fill(Color(.systemGray).opacity(0.5))
+                                )
+                                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // 오늘의 기록 버튼 (우측 하단)
+                    Button {
+                        showingDailyLogEditor = true
+                    } label: {
+                        Image(systemName: "heart.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
+                            .background(
+                                Circle()
+                                    .fill(Color.pink)
+                            )
+                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.trailing, 20)
                 .padding(.bottom, 20)
             }
-            .sheet(isPresented: $showingGratitudeEditor) {
-                GratitudeEditModal(day: selectedDay)
+            .sheet(isPresented: $showingDailyLogEditor) {
+                DailyLogEditModal(day: selectedDay)
             }
         }
     }
@@ -93,13 +112,17 @@ struct TodayView: View {
         if !weeklyActions.isEmpty {
             weeklySection
         }
-        
-        dailySection
-        gratitudeSection
+        if !dailyTodayActions.isEmpty {
+            dailySection
+        }
+        if dailyLogEntry != nil {
+            dailyLogSection
+        }
     }
+
     
     private var weeklySection: some View {
-        SectionCardView(title: "이번 주 목표") {
+        SectionCardView(title: "⭐️ 이번 주 목표") {
             VStack(spacing: 4) {
                 ForEach(weeklyActions) { action in
                     ActionRow(
@@ -118,7 +141,7 @@ struct TodayView: View {
     }
     
     private var timeActionSection: some View {
-        SectionCardView(title: "오늘의 도전") {
+        SectionCardView(title: "⏰ 오늘의 도전") {
             TimeActionCardsSection(
                 cardItems: timeActionCardItems,
                 today: selectedDay,
@@ -131,7 +154,7 @@ struct TodayView: View {
     }
     
     private var dailySection: some View {
-        SectionCardView(title: "오늘의 액션") {
+        SectionCardView(title: "⛳️ 오늘의 액션") {
             VStack(spacing: 4) {
                 ForEach(dailyTodayActions) { action in
                     ActionRow(
@@ -150,11 +173,9 @@ struct TodayView: View {
     }
 
     @ViewBuilder
-    private var gratitudeSection: some View {
-        let dayStart = selectedDay.startOfDay(calendar: calendar)
-        let entry = gratitudeEntries.first { $0.day == dayStart }
-        if let entry = entry, (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil {
-            SectionCardView(title: "오늘의 감사일기") {
+    private var dailyLogSection: some View {
+        if let entry = dailyLogEntry {
+            SectionCardView(title: "📸 오늘의 기록") {
                 VStack(alignment: .leading, spacing: 12) {
                     if let text = entry.text, !text.isEmpty {
                         Text(text)
@@ -163,13 +184,14 @@ struct TodayView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let imageFileName = entry.imageURL,
-                       let url = gratitudeImageURL(from: imageFileName),
+                       let url = dailyLogImageURL(from: imageFileName),
                        let imageData = try? Data(contentsOf: url),
                        let image = UIImage(data: imageData) {
                         Image(uiImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 300)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, -16)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
@@ -177,7 +199,7 @@ struct TodayView: View {
         }
     }
 
-    private func gratitudeImageURL(from fileName: String) -> URL? {
+    private func dailyLogImageURL(from fileName: String) -> URL? {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
             .appendingPathComponent(fileName)
     }
@@ -235,6 +257,14 @@ struct TodayView: View {
 
     private var dailyTodayActions: [RoutineAction] {
         activeActions.filter { $0.type == .weekdayRepeat && $0.isScheduled(on: selectedDay, calendar: calendar) }
+    }
+
+    /// 선택한 날짜의 오늘의 기록 엔트리(텍스트 또는 이미지가 있을 때만)
+    private var dailyLogEntry: GratitudeEntry? {
+        let dayStart = selectedDay.startOfDay(calendar: calendar)
+        guard let entry = dailyLogEntries.first(where: { $0.day == dayStart }) else { return nil }
+        guard (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil else { return nil }
+        return entry
     }
 
     private func isEnabledForSelectedDay(_ action: RoutineAction) -> Bool {

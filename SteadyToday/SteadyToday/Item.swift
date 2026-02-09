@@ -266,7 +266,7 @@ final class ActionCheck {
 final class GratitudeEntry {
     /// 날짜 (startOfDay 기준, 수정 가능)
     var day: Date
-    /// 감사 내용
+    /// 기록 내용
     var text: String?
     /// 이미지 파일명 (Documents 디렉토리 기준)
     var imageURL: String?
