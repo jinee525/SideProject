@@ -90,7 +90,7 @@ private struct MandalartGuideButton: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showGuide, attachmentAnchor: .point(.top)) {
+        .popover(isPresented: $showGuide, attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.8))) {
             MandalartGuideView()
                 .presentationCompactAdaptation(.popover)
         }

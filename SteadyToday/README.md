@@ -91,10 +91,16 @@ Tab 3개:
 ### History
 
 - **캘린더 뷰**: 월별 캘린더, 날짜별 달성률(%) 표시(데일리+위클리+오늘의 도전 전체 기준)
-- **날짜별 상세 기록**: 선택한 날짜의 기록을 섹션별로 표시
-  - 전체 달성률 카드: 오늘의 액션 완료 현황 (완료/목표 수 및 달성률)
-  - 이번 주의 꾸준함 테이블: 주간 액션별 체크 현황을 그리드 형태로 표시
-  - 카테고리별 달성 현황 그리드: 선택한 날짜가 속한 달 기준으로 카테고리별 달성률 표시
+- **날짜별 상세 기록**: 선택한 날짜 기준으로 아래 섹션 표시 (스와이프로 날짜 변경)
+  - **오늘의 달성률**: 선택한 날짜의 진행률(완료/목표) + 액션별 완료 여부
+    - 요일 반복: 해당 요일 스케줄된 액션, 완료 = 그날 ActionCheck 유무
+    - 누적 시간: 해당 날 스케줄된 액션, 완료 = 그날 누적 시간 ≥ 목표 시간
+    - 주 N회: **그날 체크한 것만** 리스트에 포함 (안 했으면 오늘 할 일이 아니었던 것으로 간주)
+  - **오늘의 기록**: 선택한 날짜의 오늘의 기록(텍스트 또는 이미지가 있을 때만 표시)
+  - **이번 주의 꾸준함**: 선택한 날이 속한 주(월~일)의 액션별·요일별 완료 여부 그리드 (완료 = ActionCheck 유무, 요일반복/주N회/타임기반 모두 완료 시 ActionCheck 생성)
+  - **카테고리별 달성률**: 각 액션의 **시작일(미설정 시 올해 1월 1일) ~ 오늘(또는 종료일)** 구간에서 발생 횟수 대비 완료 비율을 카테고리별로 합산
+    - 요일 반복·누적 시간: 스케줄된 날만 발생, 완료 = 그날 체크(또는 시간 목표 달성)
+    - 주 N회: 주 수×N이 발생, 주마다 최대 N회까지 완료로 인정
 - **스와이프 제스처**: 좌우 스와이프로 날짜 이동, 월 경계 자동 변경
 
 ## 데이터 모델(SwiftData, 로컬 저장)
@@ -103,6 +109,7 @@ Tab 3개:
 - `MandalartCategory`: name, colorKey(색상 키), sortOrder, actions
 - `RoutineAction`: name, type(weeklyN/weekdayRepeat/timeBased), weeklyTargetN, repeatWeekdays(bitmask), isActive, startDate(활성화 시작 날짜, 선택), endDate(활성화 종료 날짜, 선택), todayOrder(전역 정렬), categoryOrder(카테고리 내 정렬), timeRecordMode(timer로 고정), timeTargetMinutes, checks, timeSessions
 - `ActionCheck`: day(해당 일자 startOfDay), createdAt, action
+  - 요일반복/주N회: 체크 토글 시 생성. 타임기반: 타이머 종료 후 목표 달성 시에도 생성(꾸준함 테이블 등에서 체크 테이블만 참조하도록)
 - `TimeSession`: attributedDay(시작 날짜 기준), durationMinutes, startAt, endAt, isManual(false로 고정), action
 
 ## 개발 메모(의도/결정사항)

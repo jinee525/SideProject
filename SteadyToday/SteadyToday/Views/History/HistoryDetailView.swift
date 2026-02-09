@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// 선택된 날짜의 하단 섹션: 오늘의 액션, 이번 주 목표, 오늘의 도전, 이번 주의 꾸준함, 카테고리별 달성 현황
+/// 선택된 날짜의 하단 섹션: 오늘의 달성률, 이번 주 목표, 오늘의 도전, 이번 주의 꾸준함, 카테고리별 달성 현황
 struct HistoryDetailView: View {
     @Binding var selectedDay: Date
     @Binding var monthAnchor: Date
@@ -12,7 +12,7 @@ struct HistoryDetailView: View {
     @Query(sort: \TimeSession.createdAt, order: .reverse) private var timeSessions: [TimeSession]
     @Query(sort: \RoutineAction.todayOrder) private var actions: [RoutineAction]
     @Query(sort: \MandalartCategory.sortOrder) private var categories: [MandalartCategory]
-    @Query(sort: \GratitudeEntry.day, order: .reverse) private var gratitudeEntries: [GratitudeEntry]
+    @Query(sort: \GratitudeEntry.day, order: .reverse) private var dailyLogEntries: [GratitudeEntry]
 
     init(selectedDay: Binding<Date>, monthAnchor: Binding<Date>) {
         _selectedDay = selectedDay
@@ -26,11 +26,20 @@ struct HistoryDetailView: View {
 
     var body: some View {
         let categoryProgresses = calculateCategoryProgresses(for: selectedDay)
-        VStack(alignment: .leading, spacing: 20) {
-            Text(detailTitle(selectedDay))
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 16)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Rectangle()
+                    .fill(AppColors.secondaryLabel.opacity(0.3))
+                    .frame(height: 1)
+                Text(detailTitle(selectedDay))
+                    .font(.headline)
+                    .foregroundStyle(AppColors.label)
+                    .lineLimit(1)
+                Rectangle()
+                    .fill(AppColors.secondaryLabel.opacity(0.3))
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 16)
 
             summaryView(categoryProgresses: categoryProgresses)
         }
@@ -54,14 +63,10 @@ struct HistoryDetailView: View {
 
     @ViewBuilder
     private func summaryView(categoryProgresses: [CategoryProgress]) -> some View {
+        let daily = dailyDetail
         VStack(alignment: .leading, spacing: 20) {
-            let dailyProgress = calculateDailyProgress(for: selectedDay)
-            let dailyActions = getDailyActionStatuses(for: selectedDay)
-            let weeklyCompletedActions = getWeeklyCompletedActions(for: selectedDay)
-            let challengeCompletedActions = getChallengeCompletedActions(for: selectedDay)
-
-            if dailyProgress != nil {
-                actionListCard(title: "오늘의 액션", actions: dailyActions, progress: dailyProgress)
+            if daily.progress != nil {
+                actionListCard(title: "🏅 오늘의 달성률", actions: daily.actions, progress: daily.progress)
             }
 
             // if !weeklyCompletedActions.isEmpty {
@@ -72,7 +77,7 @@ struct HistoryDetailView: View {
             //     actionListCard(title: "오늘의 도전", actions: challengeCompletedActions)
             // }
 
-            gratitudeSection()
+            dailyLogSection()
 
             actionCheckTable()
 
@@ -110,6 +115,25 @@ struct HistoryDetailView: View {
 
     // MARK: - Data & Progress
 
+    /// 선택한 날짜 00:00 (여러 계산에서 공통 사용)
+    private var selectedDayStart: Date { selectedDay.startOfDay(calendar: calendar) }
+    /// 오늘 00:00 (카테고리 달성률 등에서 사용)
+    private var todayStart: Date { Date().startOfDay(calendar: calendar) }
+    /// 선택한 날이 속한 주 구간
+    private var selectedWeekInterval: DateInterval { selectedDay.weekInterval(calendar: calendar) }
+    /// 해당 주의 요일 배열 (꾸준함 테이블에서 한 번만 계산)
+    private var selectedWeekDays: [Date] { getWeekDays(for: selectedWeekInterval) }
+    /// 해당 주의 액션별 체크 목록 (꾸준함 테이블)
+    private var selectedWeekChecks: [RoutineAction: [ActionCheck]] { getWeekChecks(for: selectedWeekInterval) }
+    /// 해당 주에 표시할 액션 목록 (selectedWeekDays 기반으로 한 번만 계산)
+    private var actionsForSelectedWeek: [RoutineAction] {
+        actions.filter { action in
+            selectedWeekDays.contains { day in
+                action.isActive(on: day, calendar: calendar) && (action.type == .weeklyN || action.isScheduled(on: day, calendar: calendar))
+            }
+        }
+    }
+
     private struct CategoryProgress: Identifiable {
         let category: MandalartCategory
         let completed: Int
@@ -125,104 +149,79 @@ struct HistoryDetailView: View {
         var id: String { name }
     }
 
-    private func calculateDailyProgress(for day: Date) -> DailyProgress? {
-        DailyCompletionCalculator.progress(
-            for: day,
-            actions: actions,
-            checks: checks,
-            timeSessions: timeSessions,
-            calendar: calendar
-        )
-    }
-
-    private func getDailyActionStatuses(for day: Date) -> [ActionStatus] {
-        let dayStart = day.startOfDay(calendar: calendar)
-        var result: [ActionStatus] = []
+    /// 선택한 날짜의 섹션용 데이터 (진행률 + 액션별 완료 상태를 한 번에 계산)
+    private var dailyDetail: (progress: DailyProgress?, actions: [ActionStatus]) {
+        let dayStart = selectedDayStart
+        var actionsList: [ActionStatus] = []
+        var completedCount = 0
+        var targetCount = 0
 
         let dailyTargets = actions.filter { action in
             action.isActive(on: dayStart, calendar: calendar)
                 && action.type == .weekdayRepeat
                 && action.isScheduled(on: dayStart, calendar: calendar)
         }
-        result.append(contentsOf: dailyTargets.map { action in
-            let isCompleted = checks.contains { check in
-                check.day == dayStart && check.action?.persistentModelID == action.persistentModelID
-            }
-            return ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted)
-        })
+        for action in dailyTargets {
+            targetCount += 1
+            let isCompleted = checks.contains { $0.day == dayStart && $0.action?.persistentModelID == action.persistentModelID }
+            if isCompleted { completedCount += 1 }
+            actionsList.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted))
+        }
 
         let timeTargets = actions.filter { action in
             action.isActive(on: dayStart, calendar: calendar)
                 && action.type == .timeBased
                 && action.isScheduled(on: dayStart, calendar: calendar)
         }
-        result.append(contentsOf: timeTargets.map { action in
+        for action in timeTargets {
+            targetCount += 1
             let total = timeSessions
-                .filter { $0.action?.persistentModelID == action.persistentModelID }
-                .filter { $0.attributedDay == dayStart }
+                .filter { $0.action?.persistentModelID == action.persistentModelID && $0.attributedDay == dayStart }
                 .reduce(0) { $0 + $1.durationMinutes }
             let isCompleted = total >= action.timeTargetMinutes
-            return ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted)
-        })
+            if isCompleted { completedCount += 1 }
+            actionsList.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: isCompleted))
+        }
 
-        let weeklyCompleted = actions.filter { action in
+        // 주 N회: 오늘 체크한 것만 리스트에 포함 (안 했으면 오늘 할 일이 아니었던 것)
+        let weeklyOnDay = actions.filter { action in
             guard action.type == .weeklyN, action.isActive(on: dayStart, calendar: calendar) else { return false }
             return checks.contains { $0.action?.persistentModelID == action.persistentModelID && $0.day == dayStart }
         }
-        result.append(contentsOf: weeklyCompleted.map { action in
-            ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true)
-        })
+        for action in weeklyOnDay {
+            targetCount += 1
+            completedCount += 1
+            actionsList.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true))
+        }
 
-        return result.sorted {
+        let progress: DailyProgress? = targetCount > 0 ? DailyProgress(completed: completedCount, target: targetCount) : nil
+        let sorted = actionsList.sorted {
             if $0.isCompleted != $1.isCompleted { return $0.isCompleted && !$1.isCompleted }
             return $0.name < $1.name
         }
+        return (progress, sorted)
     }
 
-    private func getChallengeCompletedActions(for day: Date) -> [ActionStatus] {
-        let dayStart = day.startOfDay(calendar: calendar)
-        let timeTargets = actions.filter { $0.isActive(on: dayStart, calendar: calendar) && $0.type == .timeBased && $0.isScheduled(on: dayStart, calendar: calendar) }
-        var completedActions: [ActionStatus] = []
-        for action in timeTargets {
-            let total = timeSessions
-                .filter { $0.action?.persistentModelID == action.persistentModelID }
-                .filter { $0.attributedDay == dayStart }
-                .reduce(0) { $0 + $1.durationMinutes }
-            if total >= action.timeTargetMinutes {
-                completedActions.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true))
-            }
-        }
-        return completedActions
-    }
-
-    private func getWeeklyCompletedActions(for day: Date) -> [ActionStatus] {
-        let dayStart = day.startOfDay(calendar: calendar)
-        let thisWeek = day.weekInterval(calendar: calendar)
-        let weeklyTargets = actions.filter { $0.isActive(on: dayStart, calendar: calendar) && $0.type == .weeklyN }
-        var completedActions: [ActionStatus] = []
-        for action in weeklyTargets {
-            let actionChecks = checks.filter {
-                guard $0.action?.persistentModelID == action.persistentModelID else { return false }
-                return $0.day >= thisWeek.start && $0.day < thisWeek.end
-            }
-            if !actionChecks.isEmpty {
-                completedActions.append(ActionStatus(name: action.name, colorKey: action.category?.colorKey, isCompleted: true))
-            }
-        }
-        return completedActions
-    }
-
+    /// 카테고리별 달성률: 각 액션의 시작일(또는 올해 1월 1일) ~ 오늘까지 발생한 횟수 중 완료한 비율
     private func calculateCategoryProgresses(for day: Date) -> [CategoryProgress] {
-        let (monthStart, monthEnd) = day.monthInterval(calendar: calendar)
-        let todayStart = Date().startOfDay(calendar: calendar)
+        let defaultIntervalStart = calendar.date(from: DateComponents(year: calendar.component(.year, from: todayStart), month: 1, day: 1))!
         return categories.map { category in
             var total = 0, completed = 0
             for action in category.actions {
                 guard action.isActive else { continue }
+                let intervalStart = action.startDate?.startOfDay(calendar: calendar) ?? defaultIntervalStart
+                let intervalEnd: Date
+                if let endDate = action.endDate {
+                    let endDay = endDate.startOfDay(calendar: calendar)
+                    intervalEnd = endDay < todayStart ? endDay : todayStart
+                } else {
+                    intervalEnd = todayStart
+                }
+                guard intervalStart <= intervalEnd else { continue }
                 switch action.type {
                 case .weekdayRepeat:
-                    var d = monthStart
-                    while d < monthEnd {
+                    var d = intervalStart
+                    while d <= intervalEnd {
                         let dayStart = d.startOfDay(calendar: calendar)
                         if action.isActive(on: dayStart, calendar: calendar), action.isScheduled(on: dayStart, calendar: calendar) {
                             total += 1
@@ -233,8 +232,8 @@ struct HistoryDetailView: View {
                         d = calendar.date(byAdding: .day, value: 1, to: d) ?? d
                     }
                 case .timeBased:
-                    var d = monthStart
-                    while d < monthEnd {
+                    var d = intervalStart
+                    while d <= intervalEnd {
                         let dayStart = d.startOfDay(calendar: calendar)
                         if action.isActive(on: dayStart, calendar: calendar), action.isScheduled(on: dayStart, calendar: calendar) {
                             total += 1
@@ -248,25 +247,26 @@ struct HistoryDetailView: View {
                         d = calendar.date(byAdding: .day, value: 1, to: d) ?? d
                     }
                 case .weeklyN:
-                    var weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: monthStart))!
-                    var weeksInMonth = 0
-                    while weekStart < monthEnd {
-                        weeksInMonth += 1
-                        weekStart = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+                    let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: intervalStart))!
+                    var w = weekStart
+                    var weekCount = 0
+                    while w <= intervalEnd {
+                        weekCount += 1
+                        w = calendar.date(byAdding: .day, value: 7, to: w) ?? w
                     }
-                    total += weeksInMonth * action.weeklyTargetN
-                    weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: monthStart))!
-                    while weekStart < monthEnd {
-                        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart)!
-                        if weekStart <= todayStart {
+                    total += weekCount * action.weeklyTargetN
+                    w = weekStart
+                    while w <= intervalEnd {
+                        let weekEnd = calendar.date(byAdding: .day, value: 7, to: w)!
+                        if w <= todayStart {
                             let weekChecks = checks.filter { check in
                                 guard check.action?.persistentModelID == action.persistentModelID else { return false }
                                 let ds = check.day.startOfDay(calendar: calendar)
-                                return ds >= weekStart && ds < weekEnd
+                                return ds >= w && ds < weekEnd
                             }
                             completed += min(action.weeklyTargetN, weekChecks.count)
                         }
-                        weekStart = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+                        w = calendar.date(byAdding: .day, value: 7, to: w) ?? w
                     }
                 }
             }
@@ -329,7 +329,7 @@ struct HistoryDetailView: View {
     }
 
     private func categoryGrid(categoryProgresses: [CategoryProgress]) -> some View {
-        SectionCardView(title: "이달의 카테고리 달성 현황", accessory: { CategoryProgressInfoButton() }) {
+        SectionCardView(title: "🎯 카테고리별 달성률", accessory: { CategoryProgressInfoButton() }) {
             let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(categoryProgresses.prefix(8)) { progress in
@@ -360,9 +360,9 @@ struct HistoryDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("카테고리별 달성률 계산 방법")
                     .font(.headline)
-                Text("선택한 날짜가 속한 달의 성공한 액션 수 / 그 달에 발생하는 총 액션 수의 비율입니다.")
+                Text("각 액션의 시작일(미설정 시 올해 1월 1일) ~ 오늘까지, 발생한 횟수 중 완료한 비율을 카테고리별로 합산합니다.")
                     .font(.subheadline)
-                Text("• 요일 반복·누적 시간 액션: 그 달에 반복 요일에 해당하는 일수만큼 발생, 완료한 날만 성공으로 인정\n• 주 N회: 그 달에 걸친 주 수 × N이 발생, 주마다 최대 N회까지 성공으로 인정")
+                Text("• 요일 반복·누적 시간: 해당 기간에 스케줄된 날만 발생으로 치고, 완료한 날만 성공\n• 주 N회: 해당 기간의 주 수 × N이 발생, 주마다 최대 N회까지 성공으로 인정\n• 액션별 진행기간(시작/종료일)이 다르면 각자 기간만큼만 집계됩니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -397,12 +397,9 @@ struct HistoryDetailView: View {
     }
 
     @ViewBuilder
-    private func gratitudeSection() -> some View {
-        let dayStart = selectedDay.startOfDay(calendar: calendar)
-        let entry = gratitudeEntries.first { $0.day == dayStart }
-        
-        if let entry = entry, (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil {
-            SectionCardView(title: "감사일기") {
+    private func dailyLogSection() -> some View {
+        if let entry = selectedDayDailyLogEntry {
+            SectionCardView(title: "📸 오늘의 기록") {
                 VStack(alignment: .leading, spacing: 12) {
                     if let text = entry.text, !text.isEmpty {
                         Text(text)
@@ -418,7 +415,8 @@ struct HistoryDetailView: View {
                         Image(uiImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 300)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, -16)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
@@ -431,15 +429,19 @@ struct HistoryDetailView: View {
         return documentsPath.appendingPathComponent(fileName)
     }
     
+    /// 선택한 날짜의 오늘의 기록 엔트리(텍스트 또는 이미지가 있을 때만)
+    private var selectedDayDailyLogEntry: GratitudeEntry? {
+        let entry = dailyLogEntries.first { $0.day == selectedDayStart }
+        guard let entry = entry else { return nil }
+        guard (entry.text != nil && !entry.text!.isEmpty) || entry.imageURL != nil else { return nil }
+        return entry
+    }
+
     @ViewBuilder
     private func actionCheckTable() -> some View {
-        let weekInterval = selectedDay.weekInterval(calendar: calendar)
-        let weekDays = getWeekDays(for: weekInterval)
-        let weekChecks = getWeekChecks(for: weekInterval)
-        let actionsForWeek = getActionsForWeek(weekInterval: weekInterval)
-        if !actionsForWeek.isEmpty {
+        if !actionsForSelectedWeek.isEmpty {
             let gridLine = AppColors.gridLine
-            SectionCardView(title: "이번 주의 꾸준함") {
+            SectionCardView(title: "🏃 이번 주의 꾸준함") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 0) {
@@ -449,7 +451,7 @@ struct HistoryDetailView: View {
                                 .frame(width: 100, alignment: .leading)
                                 .padding(.horizontal, 8)
                                 .overlay(alignment: .trailing) { Rectangle().fill(gridLine).frame(width: 1).frame(maxHeight: .infinity) }
-                            ForEach(Array(weekDays.enumerated()), id: \.element) { index, day in
+                            ForEach(Array(selectedWeekDays.enumerated()), id: \.element) { index, day in
                                 VStack(spacing: 4) {
                                     Text(dayLabel(for: day))
                                         .font(.caption.weight(.semibold))
@@ -460,7 +462,7 @@ struct HistoryDetailView: View {
                                 }
                                 .frame(width: 40)
                                 .overlay(alignment: .trailing) {
-                                    if index < weekDays.count - 1 {
+                                    if index < selectedWeekDays.count - 1 {
                                         Rectangle().fill(gridLine).frame(width: 1).frame(maxHeight: .infinity)
                                     }
                                 }
@@ -468,7 +470,7 @@ struct HistoryDetailView: View {
                         }
                         .padding(.vertical, 8)
                         .overlay(alignment: .bottom) { Rectangle().fill(gridLine).frame(height: 1) }
-                        ForEach(actionsForWeek.sorted(by: { $0.name < $1.name }), id: \.persistentModelID) { action in
+                        ForEach(actionsForSelectedWeek.sorted(by: { $0.name < $1.name }), id: \.persistentModelID) { action in
                             HStack(spacing: 0) {
                                 HStack(spacing: 6) {
                                     CategoryColorDot(key: action.category?.colorKey, size: 8)
@@ -479,11 +481,10 @@ struct HistoryDetailView: View {
                                 .frame(width: 100, alignment: .leading)
                                 .padding(.horizontal, 8)
                                 .overlay(alignment: .trailing) { Rectangle().fill(gridLine).frame(width: 1).frame(maxHeight: .infinity) }
-                                ForEach(Array(weekDays.enumerated()), id: \.element) { index, day in
-                                    let dayChecks = weekChecks[action] ?? []
-                                    let isChecked = dayChecks.contains { $0.day == day.startOfDay(calendar: calendar) }
+                                ForEach(Array(selectedWeekDays.enumerated()), id: \.element) { index, day in
+                                    let isCompleted = isActionCompletedOnDay(action, day: day)
                                     Group {
-                                        if isChecked {
+                                        if isCompleted {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .font(.caption)
                                                 .foregroundStyle(CategoryColors.color(for: action.category?.colorKey))
@@ -493,7 +494,7 @@ struct HistoryDetailView: View {
                                     }
                                     .frame(width: 40)
                                     .overlay(alignment: .trailing) {
-                                        if index < weekDays.count - 1 {
+                                        if index < selectedWeekDays.count - 1 {
                                             Rectangle().fill(gridLine).frame(width: 1).frame(maxHeight: .infinity)
                                         }
                                     }
@@ -519,15 +520,6 @@ struct HistoryDetailView: View {
         return days
     }
 
-    private func getActionsForWeek(weekInterval: DateInterval) -> [RoutineAction] {
-        let weekDays = getWeekDays(for: weekInterval)
-        return actions.filter { action in
-            weekDays.contains { day in
-                action.isActive(on: day, calendar: calendar) && (action.type == .weeklyN || action.isScheduled(on: day, calendar: calendar))
-            }
-        }
-    }
-
     private func getWeekChecks(for weekInterval: DateInterval) -> [RoutineAction: [ActionCheck]] {
         let weekChecks = checks.filter { check in
             let checkDay = check.day.startOfDay(calendar: calendar)
@@ -543,6 +535,12 @@ struct HistoryDetailView: View {
         var finalResult: [RoutineAction: [ActionCheck]] = [:]
         for (_, value) in result { finalResult[value.action] = value.checks }
         return finalResult
+    }
+
+    /// 해당 날짜에 액션이 완료된지. (요일반복/주N회/타임기반 모두 완료 시 ActionCheck 생성하므로 체크 테이블만 보면 됨)
+    private func isActionCompletedOnDay(_ action: RoutineAction, day: Date) -> Bool {
+        let dayStart = day.startOfDay(calendar: calendar)
+        return checks.contains { $0.action?.persistentModelID == action.persistentModelID && $0.day == dayStart }
     }
 
     private func dayLabel(for day: Date) -> String {
