@@ -30,15 +30,15 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
         self.content = content()
     }
 
-    /// 헤더 배경: 상단 solid(라이트/다크 대응) + 하단만 흰색→투명 그라데이션(스크롤 시 콘텐츠가 비침)
+    /// 헤더 배경: 배경색(라이트=연한회색, 다크=검정에 가까운 색)→투명 그라데이션(스크롤 시 콘텐츠가 비침)
     private var headerBackground: some View {
         LinearGradient(
             stops: [
-                .init(color: AppColors.cardBackground, location: 0),
-                .init(color: AppColors.cardBackground, location: 0.8),
-                .init(color: AppColors.cardBackground.opacity(0.7), location: 0.9),
-                .init(color: AppColors.cardBackground.opacity(0.35), location: 0.95),
-                .init(color: AppColors.cardBackground.opacity(0), location: 1)
+                .init(color: AppColors.pageBackground, location: 0),
+                .init(color: AppColors.pageBackground, location: 0.8),
+                .init(color: AppColors.pageBackground.opacity(0.7), location: 0.9),
+                .init(color: AppColors.pageBackground.opacity(0.35), location: 0.95),
+                .init(color: AppColors.pageBackground.opacity(0), location: 1)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -67,9 +67,8 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
                                     } label: {
                                         Image(systemName: "chevron.left")
                                             .font(.title3)
-                                            .foregroundStyle(AppColors.label.opacity(0.2))
+                                            .foregroundStyle(AppColors.label.opacity(0.5))
                                             .frame(width: 32, height: 32)
-                                            .background(Circle().fill(AppColors.label.opacity(0.08)))
                                     }
                                 } else {
                                     Color.clear
@@ -89,9 +88,8 @@ struct MainTabLayout<Content: View, TitleAccessory: View>: View {
                                     } label: {
                                         Image(systemName: "chevron.right")
                                             .font(.title3)
-                                            .foregroundStyle(AppColors.label.opacity(0.2))
+                                            .foregroundStyle(AppColors.label.opacity(0.5))
                                             .frame(width: 32, height: 32)
-                                            .background(Circle().fill(AppColors.label.opacity(0.08)))
                                     }
                                 } else {
                                     Color.clear
