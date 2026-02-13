@@ -120,14 +120,8 @@ struct MandalartGridView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5)
-                        .onEnded { _ in
-                            editingCategory = category
-                        }
-                )
             } else {
-                // 빈 셀 - (+) 버튼
+                // 빈 셀 - (+) 버튼 → 생성 모달
                 Button {
                     showingAddCategory = true
                 } label: {
@@ -145,26 +139,28 @@ struct MandalartGridView: View {
     }
     
     private func centerGoalCell(goalTitle: String) -> some View {
-        VStack(spacing: 6) {
-            if goalTitle.isEmpty {
-                Text("연간 목표")
-                    .font(.caption.weight(.semibold))
-            } else {
-                Text(goalTitle)
-                    .font(.headline)
-                    .foregroundStyle(AppColors.label)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.7)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .frame(height: 100)
-        .onLongPressGesture {
+        Button {
             goalTitleDraft = goalTitle
             showingGoalEditor = true
+        } label: {
+            VStack(spacing: 6) {
+                if goalTitle.isEmpty {
+                    Text("연간 목표")
+                        .font(.caption.weight(.semibold))
+                } else {
+                    Text(goalTitle)
+                        .font(.headline)
+                        .foregroundStyle(AppColors.label)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 100)
         }
+        .buttonStyle(.plain)
     }
     
     // 하단: 액션 그리드
@@ -177,7 +173,9 @@ struct MandalartGridView: View {
             
             // 두 번째 행 (중앙에 카테고리)
             actionCell(at: 3, category: category)
-            centerCategoryCell(category: category)
+            centerCategoryCell(category: category) {
+                editingCategory = category
+            }
             actionCell(at: 4, category: category)
             
             // 세 번째 행
@@ -193,26 +191,28 @@ struct MandalartGridView: View {
         
         return Group {
             if let action = action {
-                VStack(spacing: 4) {
-                    Text(action.name)
-                        .font(.caption.weight(.medium))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .multilineTextAlignment(.center)
-                    Text(action.type.title)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .frame(height: 100)
-                .background(CategoryColors.color(for: category.colorKey).opacity(0.3))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onLongPressGesture(minimumDuration: 0.5) {
+                Button {
                     editingAction = action
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(action.name)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+                            .multilineTextAlignment(.center)
+                        Text(actionSubtitle(for: action))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                    .background(CategoryColors.color(for: category.colorKey).opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                .buttonStyle(.plain)
             } else {
-                // 빈 셀 - (+) 버튼
+                // 빈 셀 - (+) 버튼 → 생성 모달
                 Button {
                     showingAddAction = true
                 } label: {
@@ -229,18 +229,39 @@ struct MandalartGridView: View {
         }
     }
     
-    private func centerCategoryCell(category: MandalartCategory) -> some View {
-        VStack(spacing: 6) {
-            Text(category.name)
-                .font(.headline)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
+    /// 액션 타입별 실제 설정값 문자열 (주 N회 → "주 3회", 요일 반복 → "월,수,금", 누적 시간 → "01:30:00")
+    private func actionSubtitle(for action: RoutineAction) -> String {
+        switch action.type {
+        case .weeklyN:
+            return "주 \(action.weeklyTargetN)회"
+        case .weekdayRepeat:
+            let s = action.repeatWeekdays.displayStringKR
+            return s.map { String($0) }.joined(separator: ",")
+        case .timeBased:
+            let total = action.timeTargetMinutes
+            let h = total / 60
+            let m = total % 60
+            return String(format: "%02d:%02d:00", h, m)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .frame(height: 100)
-        .background(CategoryColors.color(for: category.colorKey).opacity(1))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func centerCategoryCell(category: MandalartCategory, onTap: @escaping () -> Void) -> some View {
+        Button {
+            onTap()
+        } label: {
+            VStack(spacing: 6) {
+                Text(category.name)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 100)
+            .background(CategoryColors.color(for: category.colorKey).opacity(1))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }

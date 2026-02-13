@@ -12,6 +12,12 @@ struct CreateEditModal: View {
     @Environment(\.dismiss) private var dismiss
     
     let modalType: CreateEditModalType
+
+    private static var endOfCurrentYear: Date {
+        let cal = Calendar.steadyMondayCalendar
+        let year = cal.component(.year, from: Date())
+        return cal.date(from: DateComponents(year: year, month: 12, day: 31)) ?? Date()
+    }
     
     // Goal
     @State private var goalTitle: String = ""
@@ -27,10 +33,8 @@ struct CreateEditModal: View {
     @State private var weekdays: WeekdayMask = [.mon, .wed, .fri]
     @State private var targetHours: Int = 1
     @State private var targetMinutes: Int = 0
-    @State private var hasStartDate: Bool = false
     @State private var startDate: Date = Date()
-    @State private var hasEndDate: Bool = false
-    @State private var endDate: Date = Date()
+    @State private var endDate: Date = Self.endOfCurrentYear
     
     init(modalType: CreateEditModalType) {
         self.modalType = modalType
@@ -50,14 +54,12 @@ struct CreateEditModal: View {
                 _weekdays = State(initialValue: WeekdayMask(rawValue: action.repeatWeekdaysRaw))
                 _targetHours = State(initialValue: action.timeTargetMinutes / 60)
                 _targetMinutes = State(initialValue: action.timeTargetMinutes % 60)
-                _hasStartDate = State(initialValue: action.startDate != nil)
                 _startDate = State(initialValue: action.startDate ?? Date())
-                _hasEndDate = State(initialValue: action.endDate != nil)
-                _endDate = State(initialValue: action.endDate ?? Date())
+                _endDate = State(initialValue: action.endDate ?? Self.endOfCurrentYear)
             } else {
-                // 생성 모드: 기본적으로 시작 날짜를 오늘로 설정
-                _hasStartDate = State(initialValue: true)
+                // 생성 모드: 시작=오늘, 종료=해당 연도 12/31
                 _startDate = State(initialValue: Date())
+                _endDate = State(initialValue: Self.endOfCurrentYear)
             }
         }
     }
@@ -71,6 +73,18 @@ struct CreateEditModal: View {
             }
         ) {
             contentSection
+            if isEditModeWithDeletable {
+                Button {
+                    deleteAndDismiss()
+                } label: {
+                    Text("삭제하기")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.red.opacity(0.85))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            }
         }
     }
     
@@ -83,6 +97,34 @@ struct CreateEditModal: View {
         case .action(_, let action):
             return action == nil ? "액션 추가" : "액션 수정"
         }
+    }
+
+    /// 수정 모드이면서 삭제 가능한 경우(카테고리/액션만, 목표는 제외)
+    private var isEditModeWithDeletable: Bool {
+        switch modalType {
+        case .goal:
+            return false
+        case .category(_, let category):
+            return category != nil
+        case .action(_, let action):
+            return action != nil
+        }
+    }
+
+    private func deleteAndDismiss() {
+        switch modalType {
+        case .goal:
+            break
+        case .category(_, let category):
+            if let category = category {
+                modelContext.delete(category)
+            }
+        case .action(_, let action):
+            if let action = action {
+                modelContext.delete(action)
+            }
+        }
+        dismiss()
     }
     
     @ViewBuilder
@@ -149,28 +191,17 @@ struct CreateEditModal: View {
             }
             
             Section("활성화 기간") {
-                Toggle("시작 날짜 설정", isOn: $hasStartDate)
-                if hasStartDate {
-                    DatePicker("시작 날짜", selection: $startDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
-                
-                Toggle("종료 날짜 설정", isOn: $hasEndDate)
-                if hasEndDate {
-                    DatePicker("종료 날짜", selection: $endDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                        .onChange(of: hasStartDate) { oldValue, newValue in
-                            if newValue && endDate < startDate {
-                                endDate = startDate
-                            }
+                DatePicker("시작 날짜", selection: $startDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                DatePicker("종료 날짜", selection: $endDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .onChange(of: startDate) { _, newValue in
+                        if endDate < newValue {
+                            endDate = newValue
                         }
-                        .onChange(of: startDate) { oldValue, newValue in
-                            if hasEndDate && endDate < newValue {
-                                endDate = newValue
-                            }
-                        }
-                }
+                    }
             }
+            .environment(\.locale, Locale(identifier: "ko_KR"))
         }
     }
     
@@ -186,12 +217,10 @@ struct CreateEditModal: View {
             if actionType == .timeBased && weekdays.isEmpty { return false }
             if actionType == .timeBased && (targetHours == 0 && targetMinutes == 0) { return false }
             // 날짜 유효성 검사: 종료 날짜가 시작 날짜보다 이전이면 안 됨
-            if hasStartDate && hasEndDate {
-                let calendar = Calendar.steadyMondayCalendar
-                let startDay = startDate.startOfDay(calendar: calendar)
-                let endDay = endDate.startOfDay(calendar: calendar)
-                if endDay < startDay { return false }
-            }
+            let calendar = Calendar.steadyMondayCalendar
+            let startDay = startDate.startOfDay(calendar: calendar)
+            let endDay = endDate.startOfDay(calendar: calendar)
+            if endDay < startDay { return false }
             return true
         }
     }
@@ -230,8 +259,8 @@ struct CreateEditModal: View {
                 action.repeatWeekdays = weekdays
                 action.timeRecordMode = .timer
                 action.timeTargetMinutes = targetHours * 60 + targetMinutes
-                action.startDate = hasStartDate ? startDate : nil
-                action.endDate = hasEndDate ? endDate : nil
+                action.startDate = startDate
+                action.endDate = endDate
             } else {
                 // 생성 모드
                 let nextCategoryOrder = (category.actions.map(\.categoryOrder).max() ?? -1) + 1
@@ -244,8 +273,8 @@ struct CreateEditModal: View {
                     weeklyTargetN: weeklyTargetN,
                     repeatWeekdays: weekdays,
                     isActive: true,
-                    startDate: hasStartDate ? startDate : nil,
-                    endDate: hasEndDate ? endDate : nil,
+                    startDate: startDate,
+                    endDate: endDate,
                     todayOrder: maxTodayOrder + 1,
                     categoryOrder: nextCategoryOrder,
                     category: category,

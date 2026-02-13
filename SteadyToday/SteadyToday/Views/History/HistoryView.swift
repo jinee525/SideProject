@@ -1,9 +1,16 @@
 import SwiftUI
 import SwiftData
 
+enum HistoryTab: String, CaseIterable {
+    case summary = "요약"
+    case calendar = "달력"
+    case log = "로그"
+}
+
 struct HistoryView: View {
     private let calendar = Calendar.steadyMondayCalendar
 
+    @State private var selectedTab: HistoryTab = .calendar
     @State private var monthAnchor: Date = Date().startOfDay(calendar: .steadyMondayCalendar)
     @State private var selectedDay: Date = Date().startOfDay(calendar: .steadyMondayCalendar)
 
@@ -12,22 +19,48 @@ struct HistoryView: View {
     @Query(sort: \RoutineAction.todayOrder) private var actions: [RoutineAction]
 
     var body: some View {
-        MainTabLayout(title: "히스토리") {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    BorderedCardView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            calendarHeader
-                            calendarGrid
-                        }
+        MainTabLayout(title: "돌아보기") {
+            VStack(spacing: 0) {
+                // 탭: 요약 | 달력 | 로그
+                Picker("", selection: $selectedTab) {
+                    ForEach(HistoryTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
                     }
-                    .padding(.horizontal, 16)
-
-                    HistoryDetailView(selectedDay: $selectedDay, monthAnchor: $monthAnchor)
                 }
-                .padding(.top, 12)
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+                switch selectedTab {
+                case .summary:
+                    ScrollView {
+                        HistorySummaryView()
+                            .padding(.top, 8)
+                            .padding(.bottom, 24)
+                    }
+                    .scrollContentBackground(.hidden)
+
+                case .calendar:
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            BorderedCardView {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    calendarHeader
+                                    calendarGrid
+                                }
+                            }
+                            .padding(.horizontal, 16)
+
+                            HistoryDetailView(selectedDay: $selectedDay, monthAnchor: $monthAnchor)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .scrollContentBackground(.hidden)
+
+                case .log:
+                    HistoryDailyLogView()
+                }
             }
-            .scrollContentBackground(.hidden)
             .onAppear {
                 let today = Date().startOfDay(calendar: calendar)
                 monthAnchor = today
