@@ -46,6 +46,7 @@ struct DailyLogEditModal: View {
                 TextField("오늘을 기록해보세요!", text: $dailyLogText, axis: .vertical)
                     .lineLimit(3...10)
             }
+            .environment(\.locale, Locale(identifier: "ko_KR"))
             
             Section {
                 imageView
